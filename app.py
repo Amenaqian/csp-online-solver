@@ -38,7 +38,7 @@ with st.sidebar:
 # --- 主界面：参数输入 ---
 col1, col2, col3 = st.columns(3)
 with col1:
-    L = st.number_input("母料长度 L", value=200.0)
+    L = st.number_input("母料长度 L", value=150.0)
 with col2:
     w_input = st.text_input("零件规格 (w_i)", "25, 40, 50, 55, 70")
 with col3:
