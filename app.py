@@ -109,4 +109,16 @@ if st.button("开始云端求解"):
             
             results = []
             for j, v in enumerate(rmp.getVars()):
-                if v.X >
+                if v.X > 0.5:
+                    pattern_desc = ", ".join([f"{int(patterns[j][k])}个[{w[k]}mm]" for k in range(n) if patterns[j][k] > 0])
+                    results.append({
+                        "方案编号": f"模式 {j+1}",
+                        "切割详情": pattern_desc,
+                        "使用根数": int(v.X + 0.5)
+                    })
+            st.table(pd.DataFrame(results))
+        else:
+            st.error("无法获得整数可行解。")
+
+    except Exception as e:
+        st.error(f"求解过程中出现错误: {e}")
