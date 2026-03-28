@@ -38,11 +38,11 @@ with st.sidebar:
 # --- 主界面：参数输入 ---
 col1, col2, col3 = st.columns(3)
 with col1:
-    L = st.number_input("母料长度 L", value=150.0)
+    L = st.number_input("母料长度 L", value=500.0)
 with col2:
-    w_input = st.text_input("零件规格 (w_i)", "25, 40, 50, 55, 70")
+    w_input = st.text_input("零件规格 (w_i)", "45, 60, 75, 90, 110, 125, 140, 160, 180, 200, 225, 250, 280, 310, 350")
 with col3:
-    b_input = st.text_input("需求数量 (b_i)", "50, 36, 24, 8, 30")
+    b_input = st.text_input("需求数量 (b_i)", "80, 120, 45, 60, 30, 90, 55, 40, 70, 25, 50, 35, 20, 15, 10")
 
 if st.button("开始云端求解"):
     st.write("### 🔄 列生成迭代日志")
