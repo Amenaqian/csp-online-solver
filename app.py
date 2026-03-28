@@ -33,7 +33,7 @@ with st.sidebar:
         wls_secret = st.text_input("WLS Secret", type="password")
         wls_key = st.number_input("WLS LicenseID", step=1, value=0)
         if wls_id and wls_secret and wls_key:
-            params = {"WLSACCESSID": wls_id, "WLSSECRET": wls_secret, "LICENSEID": wls_key}
+            params = {"WLSACCESSID": wls_id, "WLSSECRET": wls_secret, "LICENSEID": int(wls_key)}
 
 # --- 主界面：参数输入 ---
 col1, col2, col3 = st.columns(3)
@@ -60,76 +60,61 @@ if st.button("开始云端求解"):
         # --- 3. 初始化 RMP (LP 松弛) ---
         rmp = gp.Model("RMP", env=env)
         rmp.Params.OutputFlag = 0
-        
-        # 初始模式：单位阵
         patterns = [[(L // w[i] if i == j else 0) for j in range(n)] for i in range(n)]
         x_vars = rmp.addVars(n, obj=1.0, vtype=GRB.CONTINUOUS, name="x")
-        
-        # 核心修复点：将约束存储在字典或列表中
-        constrs = []
-        for i in range(n):
-            c = rmp.addConstr(gp.quicksum(x_vars[j] * patterns[j][i] for j in range(n)) >= b[i], name=f"c_{i}")
-            constrs.append(c)
+        constrs = [rmp.addConstr(gp.quicksum(x_vars[j] * patterns[j][i] for j in range(n)) >= b[i], name=f"c_{i}") for i in range(n)]
 
         # --- 4. 列生成循环 ---
-        iter_count = 0
         while True:
-            iter_count += 1
             rmp.optimize()
-            
-            # 正确获取对偶值 (Dual Prices)
             duals = [c.Pi for c in constrs]
-            
-            # 子问题：背包问题
-            sub = gp.Model("Sub", env=env)
-            sub.Params.OutputFlag = 0
+            sub = gp.Model("Sub", env=env); sub.Params.OutputFlag = 0
             y = sub.addVars(n, vtype=GRB.INTEGER, name="y")
             sub.setObjective(gp.quicksum(duals[i] * y[i] for i in range(n)), GRB.MAXIMIZE)
             sub.addConstr(gp.quicksum(w[i] * y[i] for i in range(n)) <= L)
             sub.optimize()
-            
             reduced_cost = 1 - sub.ObjVal
-            
-            # 打印过程
-            log_area.markdown(f"**第 {iter_count} 次迭代**: LP 目标值 = `{round(rmp.ObjVal, 2)}`, 检验数 = `{round(reduced_cost, 4)}`")
-
-            # 停止条件
-            if reduced_cost >= -1e-6:
-                log_area.success("✨ 已达到 LP 最优，停止迭代。")
-                break
-            
-            # 添加新切割方案 (New Column)
+            if reduced_cost >= -1e-6: break
             new_pattern = [int(y[i].X + 0.5) for i in range(n)]
-            log_area.markdown(f"&nbsp;&nbsp;&nbsp;&nbsp;➡️ 发现新列: `{new_pattern}`")
+            log_area.write(f"发现新列: `{new_pattern}` | 当前LP值: `{round(rmp.ObjVal, 2)}`")
             patterns.append(new_pattern)
-            
-            # 将新列加入 RMP
             new_col = gp.Column(new_pattern, constrs)
             rmp.addVar(obj=1.0, column=new_col, vtype=GRB.CONTINUOUS, name=f"x_{len(patterns)-1}")
 
-        # --- 5. MIP 最终整数求解 ---
+        # --- 5. MIP 最终整数求解与利用率计算 ---
         st.write("---")
         st.write("### 🏆 最终整数切割方案 (MIP)")
-        
-        # 将所有变量转为整数
-        for v in rmp.getVars():
-            v.vtype = GRB.INTEGER
-        
+        for v in rmp.getVars(): v.vtype = GRB.INTEGER
         rmp.optimize()
         
         if rmp.status == GRB.OPTIMAL:
-            st.metric("母料总需求量", f"{int(rmp.ObjVal + 0.5)} 根")
+            total_used = int(rmp.ObjVal + 0.5)
             
+            # 计算利用率
+            total_required_length = sum(wi * bi for wi, bi in zip(w, b))
+            total_provided_length = total_used * L
+            efficiency = (total_required_length / total_provided_length) * 100
+
+            # 顶部指标显示
+            m_col1, m_col2 = st.columns(2)
+            m_col1.metric("母料总需求量", f"{total_used} 根")
+            m_col2.metric("原材料总利用率", f"{round(efficiency, 2)}%")
+
             results = []
             for j, v in enumerate(rmp.getVars()):
                 if v.X > 0.5:
-                    pattern_desc = ", ".join([f"{int(patterns[j][k])}个[{w[k]}mm]" for k in range(n) if patterns[j][k] > 0])
+                    used_qty = int(v.X + 0.5)
+                    pattern = patterns[j]
+                    p_len = sum(pattern[k] * w[k] for k in range(n))
+                    pattern_desc = " + ".join([f"{int(pattern[k])}个[{w[k]}mm]" for k in range(n) if pattern[k] > 0])
                     results.append({
                         "方案编号": f"模式 {j+1}",
-                        "切割详情": pattern_desc,
-                        "使用根数": int(v.X + 0.5)
+                        "切割详情 (单根)": pattern_desc,
+                        "使用根数": used_qty,
+                        "单根剩余空间": f"{round(L - p_len, 2)} mm"
                     })
-            st.table(pd.DataFrame(results))
+            st.dataframe(pd.DataFrame(results), use_container_width=True)
+            st.success(f"💡 优化建议：通过列生成算法，您节省了大量原材料。当前方案的材料净长度为 {round(total_required_length, 2)}mm，总供应长度为 {total_provided_length}mm。")
         else:
             st.error("无法获得整数可行解。")
 
